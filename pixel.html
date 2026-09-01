@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Pixel Quest: Hutan Neon</title>
+
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #101222;
+      color: #f8f5d7;
+      font-family: "Press Start 2P", monospace;
+      overflow: hidden;
+    }
+
+    .cabinet {
+      width: min(94vw, 780px);
+      padding: 18px;
+      background: #242846;
+      border: 5px solid #5b5d92;
+      box-shadow:
+        0 0 0 5px #15172b,
+        0 20px 0 #0d0f1d,
+        0 28px 38px #000;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .title {
+      color: #ffdb70;
+      text-shadow: 3px 3px #b24a71;
+      font-size: 15px;
+    }
+
+    .stats {
+      color: #77e6b6;
+      text-align: right;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      background: #17233b;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 4px solid #0c1020;
+    }
+
+    .bottom {
+      margin-top: 14px;
+      text-align: center;
+      font-size: 9px;
+      line-height: 1.75;
+      color: #c3c7e9;
+    }
+
+    kbd {
+      background: #111426;
+      border: 2px solid #7075a8;
+      padding: 3px 5px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 8px;
+    }
+
+    #message {
+      color: #ffdb70;
+      min-height: 18px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="cabinet">
+
+    <header>
+      <div class="title">
+        PIXEL QUEST<br>
+        HUTAN NEON
+      </div>
+
+      <div class="stats" id="stats">
+        SKOR 0000<br>
+        NYAWA ♥♥♥
+      </div>
+    </header>
+
+    <canvas
+      id="game"
+      width="320"
+      height="200"
+      aria-label="Game Pixel Quest">
+    </canvas>
+
+    <div class="bottom">
+      <div id="message">
+        KUMPULKAN KRISTAL. HINDARI LENDIR!
+      </div>
+
+      <div>
+        <kbd>←</kbd>
+        <kbd>↑</kbd>
+        <kbd>→</kbd>
+        <kbd>↓</kbd>
+        /
+        <kbd>WASD</kbd>
+        GERAK
+        &nbsp;
+        <kbd>R</kbd>
+        ULANGI
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const canvas = document.querySelector("#game");
+    const ctx = canvas.getContext("2d");
+
+    const stats = document.querySelector("#stats");
+    const msg = document.querySelector("#message");
+
+    const W = 320;
+    const H = 200;
+
+    const keys = {};
+
+    let player;
+    let crystals;
+    let slimes;
+    let score;
+    let lives;
+    let gameOver;
+    let tick;
+
+
+    // =========================
+    // INPUT KEYBOARD
+    // =========================
+
+    addEventListener("keydown", (e) => {
+      keys[e.key.toLowerCase()] = true;
+
+      if (
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]
+          .includes(e.key)
+      ) {
+        e.preventDefault();
+      }
+
+      if (e.key.toLowerCase() === "r") {
+        startGame();
+      }
+    });
+
+    addEventListener("keyup", (e) => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+
+    // =========================
+    // RANDOM
+    // =========================
+
+    function rand(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+
+    // =========================
+    // START GAME
+    // =========================
+
+    function startGame() {
+      player = {
+        x: 156,
+        y: 95,
+        dx: 0,
+        dy: 0,
+        face: 1,
+        flash: 0
+      };
+
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      tick = 0;
+
+      crystals = [];
+      slimes = [];
+
+
+      // Membuat kristal
+      for (let i = 0; i < 9; i++) {
+        crystals.push({
+          x: rand(18, 298),
+          y: rand(24, 178),
+          bob: rand(0, 20)
+        });
+      }
+
+
+      // Membuat slime
+      for (let i = 0; i < 4; i++) {
+        slimes.push({
+          x: rand(25, 290),
+          y: rand(30, 170),
+          vx: Math.random() < 0.5 ? -0.55 : 0.55,
+          vy: Math.random() < 0.5 ? -0.4 : 0.4,
+          phase: rand(0, 30)
+        });
+      }
+
+      msg.textContent = "KUMPULKAN KRISTAL. HINDARI LENDIR!";
+    }
+
+
+    // =========================
+    // COLLISION
+    // =========================
+
+    function isColliding(a, b) {
+      return (
+        a.x < b.x + 12 &&
+        a.x + 12 > b.x &&
+        a.y < b.y + 12 &&
+        a.y + 12 > b.y
+      );
+    }
+
+
+    // =========================
+    // PIXEL
+    // =========================
+
+    function drawPixel(px, py, width, height, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(px, py, width, height);
+    }
+
+
+    // =========================
+    // WORLD / MAP
+    // =========================
+
+    function drawWorld() {
+      // Background
+      ctx.fillStyle = "#172a43";
+      ctx.fillRect(0, 0, W, H);
+
+
+      // Pola tanah
+      for (let yy = 8; yy < H; yy += 16) {
+        for (
+          let xx = yy / 16 % 2 ? 0 : 8;
+          xx < W;
+          xx += 16
+        ) {
+          drawPixel(
+            xx,
+            yy,
+            2,
+            2,
+            "#24405a"
+          );
+        }
+      }
+
+
+      // Rumput
+      for (let i = 0; i < 27; i++) {
+        const gx = (i * 47 + 13) % 310;
+        const gy = (i * 71 + 9) % 190;
+
+        drawPixel(
+          gx,
+          gy,
+          3,
+          7,
+          "#2f745d"
+        );
+
+        drawPixel(
+          gx + 3,
+          gy + 3,
+          4,
+          4,
+          "#28614f"
+        );
+      }
+
+
+      // Pohon bagian atas
+      for (let i = 0; i < 18; i++) {
+        const tx = (i * 31) % 320;
+
+        drawPixel(
+          tx,
+          0,
+          20,
+          13,
+          "#1a4d46"
+        );
+
+        drawPixel(
+          tx + 4,
+          4,
+          15,
+          12,
+          "#236352"
+        );
+
+        drawPixel(
+          tx + 7,
+          8,
+          6,
+          5,
+          "#78be6e"
+        );
+      }
+
+
+      // Pohon bagian bawah
+      for (let i = 0; i < 16; i++) {
+        const tx = (i * 37 + 11) % 320;
+
+        drawPixel(
+          tx,
+          187,
+          22,
+          13,
+          "#163f3d"
+        );
+
+        drawPixel(
+          tx + 4,
+          181,
+          15,
+          12,
+          "#215b4c"
+        );
+      }
+    }
+
+
+    // =========================
+    // CRYSTAL
+    // =========================
+
+    function drawCrystal(crystal) {
+      const bob = Math.floor(
+        Math.sin((tick + crystal.bob) / 8) * 2
+      );
+
+      drawPixel(
+        crystal.x + 5,
+        crystal.y + bob,
+        3,
+        2,
+        "#e8ffff"
+      );
+
+      drawPixel(
+        crystal.x + 3,
+        crystal.y + 2 + bob,
+        7,
+        6,
+        "#7ce9ef"
+      );
+
+      drawPixel(
+        crystal.x + 5,
+        crystal.y + 8 + bob,
+        3,
+        3,
+        "#4698e0"
+      );
+    }
+
+
+    // =========================
+    // SLIME
+    // =========================
+
+    function drawSlime(slime) {
+      const wobble = Math.floor(
+        Math.sin((tick + slime.phase) / 7)
+      );
+
+      drawPixel(
+        slime.x + 1,
+        slime.y + 4 + wobble,
+        10,
+        7,
+        "#b85580"
+      );
+
+      drawPixel(
+        slime.x + 3,
+        slime.y + 2 + wobble,
+        6,
+        3,
+        "#dc7593"
+      );
+
+      // Mata kiri
+      drawPixel(
+        slime.x + 3,
+        slime.y + 6 + wobble,
+        2,
+        2,
+        "#201a36"
+      );
+
+      // Mata kanan
+      drawPixel(
+        slime.x + 8,
+        slime.y + 6 + wobble,
+        2,
+        2,
+        "#201a36"
+      );
+    }
+
+
+    // =========================
+    // PLAYER
+    // =========================
+
+    function drawHero() {
+      const blink =
+        player.flash > 0 &&
+        tick % 4 < 2;
+
+      // Kepala
+      drawPixel(
+        player.x + 3,
+        player.y + 1,
+        6,
+        3,
+        "#ffd98b"
+      );
+
+      // Wajah
+      drawPixel(
+        player.x + 2,
+        player.y + 4,
+        8,
+        5,
+        blink ? "#fff3c6" : "#e9a85a"
+      );
+
+      // Mata kiri
+      drawPixel(
+        player.x + 3,
+        player.y + 5,
+        2,
+        2,
+        "#1a2540"
+      );
+
+      // Mata kanan
+      drawPixel(
+        player.x + 7,
+        player.y + 5,
+        2,
+        2,
+        "#1a2540"
+      );
+
+      // Baju
+      drawPixel(
+        player.x + 2,
+        player.y + 9,
+        8,
+        3,
+        "#4d83bd"
+      );
+
+      // Kaki kiri
+      drawPixel(
+        player.x + 1,
+        player.y + 11,
+        4,
+        2,
+        "#263c72"
+      );
+
+      // Kaki kanan
+      drawPixel(
+        player.x + 7,
+        player.y + 11,
+        4,
+        2,
+        "#263c72"
+      );
+    }
+
+
+    // =========================
+    // UPDATE GAME
+    // =========================
+
+    function updateGame() {
+      if (!gameOver) {
+
+        // Gerakan horizontal
+        const moveX =
+          (keys.arrowright || keys.d ? 1 : 0) -
+          (keys.arrowleft || keys.a ? 1 : 0);
+
+        // Gerakan vertical
+        const moveY =
+          (keys.arrowdown || keys.s ? 1 : 0) -
+          (keys.arrowup || keys.w ? 1 : 0);
+
+
+        // Gerakkan player
+        if (moveX || moveY) {
+          const distance = Math.hypot(
+            moveX,
+            moveY
+          );
+
+          player.x = Math.max(
+            3,
+            Math.min(
+              305,
+              player.x + (moveX / distance) * 1.35
+            )
+          );
+
+          player.y = Math.max(
+            15,
+            Math.min(
+              174,
+              player.y + (moveY / distance) * 1.35
+            )
+          );
+
+          if (moveX) {
+            player.face = moveX;
+          }
+        }
+
+
+        // Kurangi waktu flash
+        if (player.flash) {
+          player.flash--;
+        }
+
+
+        // =========================
+        // AMBIL KRISTAL
+        // =========================
+
+        crystals = crystals.filter((crystal) => {
+
+          if (isColliding(player, crystal)) {
+            score += 100;
+            return false;
+          }
+
+          return true;
+        });
+
+
+        // =========================
+        // GERAK SLIME
+        // =========================
+
+        slimes.forEach((slime) => {
+
+          slime.x += slime.vx;
+          slime.y += slime.vy;
+
+
+          // Pantulan horizontal
+          if (
+            slime.x < 3 ||
+            slime.x > 305
+          ) {
+            slime.vx *= -1;
+          }
+
+
+          // Pantulan vertical
+          if (
+            slime.y < 15 ||
+            slime.y > 174
+          ) {
+            slime.vy *= -1;
+          }
+
+
+          // Player kena slime
+          if (
+            isColliding(player, slime) &&
+            !player.flash
+          ) {
+            lives--;
+
+            player.flash = 50;
+
+            player.x = 156;
+            player.y = 95;
+
+
+            if (lives) {
+              msg.textContent =
+                "Aduh! Tetap semangat.";
+            } else {
+              msg.textContent =
+                "GAME OVER — tekan R";
+
+              gameOver = true;
+            }
+          }
+        });
+
+
+        // =========================
+        // LEVEL NAIK
+        // =========================
+
+        if (!crystals.length) {
+
+          score += 500;
+
+          crystals = Array.from(
+            { length: 9 },
+            () => ({
+              x: rand(18, 298),
+              y: rand(24, 178),
+              bob: rand(0, 20)
+            })
+          );
+
+
+          // Tambah slime
+          slimes.push({
+            x: rand(25, 290),
+            y: rand(30, 170),
+            vx: 0.65,
+            vy: -0.45,
+            phase: 0
+          });
+
+
+          msg.textContent =
+            "LEVEL NAIK! LENDIR BERTAMBAH.";
+        }
+      }
+
+
+      // Update UI
+      tick++;
+
+      stats.innerHTML = `
+        SKOR ${String(score).padStart(4, "0")}<br>
+        NYAWA ${"♥".repeat(lives)}${"·".repeat(3 - lives)}
+      `;
+    }
+
+
+    // =========================
+    // GAME LOOP
+    // =========================
+
+    function gameLoop() {
+
+      updateGame();
+
+      drawWorld();
+
+      crystals.forEach(drawCrystal);
+
+      slimes.forEach(drawSlime);
+
+      drawHero();
+
+
+      // =========================
+      // GAME OVER SCREEN
+      // =========================
+
+      if (gameOver) {
+
+        ctx.fillStyle =
+          "rgba(10, 12, 25, 0.72)";
+
+        ctx.fillRect(
+          47,
+          73,
+          226,
+          54
+        );
+
+
+        ctx.fillStyle = "#ffdb70";
+
+        ctx.font =
+          '12px "Press Start 2P"';
+
+        ctx.textAlign = "center";
+
+        ctx.fillText(
+          "GAME OVER",
+          160,
+          96
+        );
+
+
+        ctx.font =
+          '7px "Press Start 2P"';
+
+        ctx.fillStyle = "#f5f3d8";
+
+        ctx.fillText(
+          "TEKAN R UNTUK BERMAIN LAGI",
+          160,
+          114
+        );
+      }
+
+
+      requestAnimationFrame(gameLoop);
+    }
+
+
+    // =========================
+    // START
+    // =========================
+
+    startGame();
+    gameLoop();
+  </script>
+
+</body>
+</html>
